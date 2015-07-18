@@ -302,3 +302,8 @@
      (let [~@(interleave (map #(symbol (str % "|")) programs)
                           (map (comp pipe-form str) programs))]
         ~@body)))
+
+(defn glob [glob-str]
+  (with-pipes [bash]
+    (bash| "-c" (str "globbed_string=(" glob-str ");"
+                     "printf \"%s\n\" ${globbed_string[@]}"))))
