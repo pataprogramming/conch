@@ -244,6 +244,12 @@
       (future (run-command name args options))
       (run-command name args options))))
 
+(defn execute-stream [name & args]
+  (let [end (last args)]
+    (if (map? end)
+      (apply execute name (concat (drop-last args) [(merge {:seq true} end)]))
+      (apply execute name (concat args [{:seq true}])))))
+
 (defmacro programs
   "Creates functions corresponding to progams on the PATH, named by names."
   [& names]
@@ -251,8 +257,21 @@
            `(defn ~name [& ~'args]
               (apply execute ~(str name) ~'args)))))
 
+(defmacro pipes
+  "Creates regular and sequence versions of functions corresponding to programs
+   on the PATH, named by names. Sequence versions of functions with '|' appended
+   to the program name are also created."
+  [& names]
+  `(do (programs ~@names)
+       ~@(for [name names]
+           `(defn ~(symbol (str name "|")) [& ~'args]
+              (apply execute-stream ~(str name) ~'args)))))
+
 (defn- program-form [prog]
   `(fn [& args#] (apply execute ~prog args#)))
+
+(defn- pipe-form [prog]
+  `(fn [& args#] (apply execute-stream ~prog args#)))
 
 (defmacro let-programs
   "Like let, but expects bindings to be symbols to strings of paths to
@@ -261,8 +280,25 @@
   `(let [~@(seq/map-nth #(program-form %) 1 2 bindings)]
      ~@body))
 
+(defmacro let-pipes
+  "Like let, but expects bindings to be symbols to strings of paths to
+   programs (sequence versions with '|' appended will also be created)."
+  [bindings & body]
+  `(let-programs [~@bindings]
+     (let [~@(seq/map-nth #(symbol (str % "|")) 2
+                          (seq/map-nth #(pipe-form %) 1 2 bindings))]
+       ~@body)))
+
 (defmacro with-programs
   "Like programs, but only binds names in the scope of the with-programs call."
   [programs & body]
   `(let [~@(interleave programs (map (comp program-form str) programs))]
      ~@body))
+
+(defmacro with-pipes
+  "Like pipes, but only binds names in the scope of the with-pipes call."
+  [programs & body]
+  `(with-programs [~@programs]
+     (let [~@(interleave (map #(symbol (str % "|")) programs)
+                          (map (comp pipe-form str) programs))]
+        ~@body)))
